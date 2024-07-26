@@ -1,0 +1,24 @@
+{
+    "name": "subfork",
+    "version": "0.1.1",
+    "description": "Subfork Javascript client",
+    "main": "dist/subfork.js",
+    "scripts": {
+        "build": "mkdir -p dist && cp subfork.js dist/subfork.js && terser subfork.js -o dist/subfork.min.js --compress --mangle",
+        "prepublishOnly": "npm run build",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/subforkdev/subfork.js.git"
+    },
+    "author": "Ryan Galloway <ryan@subfork.com>",
+    "license": "BSD-3-Clause",
+    "bugs": {
+        "url": "https://github.com/subforkdev/subfork.js/issues"
+    },
+    "homepage": "https://subfork.com",
+    "devDependencies": {
+        "terser": "^5.31.3"
+    }
+}

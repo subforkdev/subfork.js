@@ -2,6 +2,7 @@
 Copyright (c) Subfork. All rights reserved.
 
 TODO:
+- use webpack to bundle client side dependencies
 - replace post-request with non-jquery function
 - refactor to immediately-invoked function expression (IIFE)
 
@@ -47,12 +48,12 @@ Set on "done" callback when creating task:
 */
 
 // define some constants
-const version = "0.1.1";
+const version = "0.1.2";
 const api_version = "api";
 const hostname = window.location.hostname;
 const port = window.location.port;
 const protocol = window.location.protocol;
-const socket_script = "https://code.subfork.com/socket.io.min.js";
+const socket_script = "https://cdn.jsdelivr.net/npm/socket.io@4.5.4/client-dist/socket.io.min.js";
 const wait_time = 100;
 
 // init some variables

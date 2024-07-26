@@ -1,12 +1,13 @@
 {
     "name": "subfork",
-    "version": "0.1.1",
-    "description": "Subfork Javascript client",
+    "version": "0.1.2",
+    "description": "Subfork Javascript libraries",
     "main": "dist/subfork.js",
     "scripts": {
-        "build": "mkdir -p dist && cp subfork.js dist/subfork.js && terser subfork.js -o dist/subfork.min.js --compress --mangle",
-        "prepublishOnly": "npm run build",
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "build": "npm run clean && npm run copy && npm run minify",
+        "clean": "shx rm -rf dist",
+        "copy": "shx mkdir -p dist && shx cp src/*.js dist/",
+        "minify": "for file in src/*.js; do terser \"$file\" -o \"dist/$(basename \"$file\" .js).min.js\" --compress --mangle; done"
     },
     "repository": {
         "type": "git",
@@ -19,6 +20,10 @@
     },
     "homepage": "https://subfork.com",
     "devDependencies": {
+        "shx": "^0.3.4",
         "terser": "^5.31.3"
-    }
+    },
+    "files": [
+        "dist/"
+    ]
 }

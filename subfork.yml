@@ -1,0 +1,22 @@
+# enter verified site domain name here
+domain: code.fork.io
+
+# enter site credentials here
+access_key: ${SUBFORK_ACCESS_KEY}
+secret_key: ${SUBFORK_SECRET_KEY}
+
+# template and static file folder paths
+template_folder: src
+static_folder: static
+
+# deployment settings
+auto_minimize: true
+
+# page template definitions
+templates:
+  subforkjs:
+    route: /subfork.js
+    file: subfork.js
+  badgejs:
+    route: /badge.js
+    file: badge.js

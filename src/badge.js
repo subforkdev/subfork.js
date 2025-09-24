@@ -1,6 +1,9 @@
 /*
-Copyright (c) Subfork. All rights reserved.
+Copyright (c) 2022-2025 Subfork. All rights reserved.
+
+TODO:
 */
+
 
 (function() {
     function createAttributionBadge() {

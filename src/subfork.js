@@ -1,58 +1,18 @@
 /*
-Copyright (c) Subfork. All rights reserved.
+Copyright (c) 2022-2025 Subfork. All rights reserved.
 
 TODO:
-- use webpack to bundle client side dependencies
-- replace post-request with non-jquery function
+- use vite/rollup to bundle client side dependencies
 - refactor to immediately-invoked function expression (IIFE)
-
-    const Subfork = (() => {
-        ...
-        return {
-            subfork: Subfork
-        }
-    })();
-
-Instantiate client:
-
-    const subfork = Subfork();
-
-or pass in some config values:
-
-    const subfork = Subfork({
-        host: "test.fork.io",
-        on: {
-            "message": function(msg) {
-                console.log(msg);
-            },
-        }
-    });
-
-Connect "test" task "done" event callback:
-
-    subfork.task("test").on("done", function(e) {
-        console.log(e.message + ": " + e.task.results);
-    });
-
-Create a "test" task with some data:
-
-    subfork.task("test").create({t:2});
-
-Set on "done" callback when creating task:
-
-    subfork.task("test").create({
-        "t": 3
-    }).on("done", function(event) {
-        console.log(event);
-    });
 */
 
 // define some constants
-const version = "0.1.2";
+const version = "0.2.0";
 const api_version = "api";
 const hostname = window.location.hostname;
 const port = window.location.port;
 const protocol = window.location.protocol;
+const event_url = "https://events.subfork.dev";
 const socket_script = "https://cdn.jsdelivr.net/npm/socket.io@4.5.4/client-dist/socket.io.min.js";
 const wait_time = 100;
 
@@ -61,18 +21,6 @@ var message;
 var server;
 var socket;
 var socket_loaded = false;
-
-// async returns a sha256 string (only works with https)
-async function sha256(message) {
-    const msgBuffer = new TextEncoder("utf-8").encode(message);
-    // hash the message
-    const hashBuffer = await window.crypto.subtle.digest("SHA-256", msgBuffer);
-    // convert ArrayBuffer to Array
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    // convert bytes to hex string
-    const hashHex = hashArray.map(b => ("00" + b.toString(16)).slice(-2)).join("");
-    return hashHex;
-};
 
 // load socket library (required for events)
 function load_socket_library(host, callback) {
@@ -113,34 +61,36 @@ function is_local() {
 };
 
 // post request to server
-// function _request(url, data={}) {
-//     fetch(url, {
-//         method: "POST",
-//         headers: {
-//             "Accept": "application/json",
-//             "Content-Type': 'application/json"
-//         },
-//         body: JSON.stringify(data)
-//     })
-//     .then(response => response.json())
-//     .then(response => console.log(JSON.stringify(response)))
-// };
-function post_request(url, data={}, func=null, async=true) {
-    $.ajax({
-        type: "POST",
-        contentType: "application/json; charset=utf-8",
-        url: url,
-        async: async,
-        data: JSON.stringify(data),
-        success: function (resp) {
-            if (func) {
-                func(resp);
-            } else {
-                console.debug("no callback");
-            };
-        },
-        dataType: "json"
-    });
+function post_request(url, data = {}, func = null, async = true) {
+  try {
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", url, async);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.setRequestHeader("X-Subfork-Request", "1");  // your CSRF-lite marker
+
+    if (async) {
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState === 4) {
+          var resp;
+          try { resp = JSON.parse(xhr.responseText || "{}"); }
+          catch (e) { resp = { success: false, error: "bad json" }; }
+          if (func) func(resp);
+        }
+      };
+      xhr.send(JSON.stringify(data));
+    } else {
+      xhr.send(JSON.stringify(data));  // blocks until done
+      var resp;
+      try { resp = JSON.parse(xhr.responseText || "{}"); }
+      catch (e) { resp = { success: false, error: "bad json" }; }
+      if (func) func(resp);
+    }
+  } catch (e) {
+    console.error("post_request error:", e);
+    if (func) func({ success: false, error: String(e) });
+  }
 };
 
 // datatype class
@@ -214,11 +164,12 @@ class Datatype {
 
 // event class
 class SubforkEvent {
-    constructor(event_name, event_data) {
+    constructor(event_name, event_data, conn) {
         this.name = event_name;
         this.type = event_data.type;
         this.message = event_data.message;
         this.event_data = event_data;
+        this.conn = conn;
     }
     data() {
         if (this.type == "data") {
@@ -227,7 +178,7 @@ class SubforkEvent {
     }
     task() {
         if (this.type == "task") {
-            let queue = new SubforkTaskQueue(this.event_data.queue);
+            let queue = new SubforkTaskQueue(this.conn, this.event_data.queue);
             return new SubforkTask(queue, this.event_data.task);
         }
     }
@@ -308,11 +259,11 @@ class SubforkTaskQueue {
         return task;
     }
     // listen for task events
-    // TODO: hash the event signature
     on(event_name, callback) {
-        let sig = this.conn.session.sessionid + ":task:" + this.name + ":" + event_name;
-        socket.on(sig, function(event_data, cb) {
-            let event = new SubforkEvent(event_name, event_data);
+        let sig = "task" + ":" + this.name + ":" + event_name;
+        console.debug("listening for event " + sig);
+        socket.on(sig, (event_data) => {
+            const event = new SubforkEvent(event_name, event_data, this.conn);
             callback(event);
         });
         return true;
@@ -378,17 +329,28 @@ class Subfork {
     // connect to event server
     connect() {
         this.session = this.get_session_data();
-        console.debug("sessionid", this.session.sessionid);
-        load_socket_library(this.config.host, function(host) {
-            socket = io("https://events.fork.io");
-            console.debug("connected to event server");
+        console.debug("session", this.session);
+    
+        load_socket_library(this.config.host, () => {
+            const token = this.session.token;
+            if (!token) {
+                console.error("No token was found in session");
+            };
+            socket = window.io(event_url, {
+                transports: ["websocket"],
+                path: "/socket.io",
+                auth: { token: token },
+                withCredentials: true
+            });
+            socket.on("connect", () => console.debug("WS connected", socket.id));
+            socket.on("connect_error", (err) => console.error("WS connect_error:", err && err.message || err));
         });
     }
     // get session data from the server
     get_session_data() {
         let data = {"source": this.config.host, "version": api_version};
         let session_data = {};
-        let url = build_url("get_session_data");
+        let url = build_url("session");
         post_request(url, data, function(resp) {
             if (resp.success && resp.data) {
                 session_data = resp.data;

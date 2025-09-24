@@ -17,7 +17,7 @@ To use the latest dev (unstable) release:
 Instantiate [Subfork](https://subfork.com) client:
 
 ```javascript
-const subfork = Subfork();
+const subfork = new Subfork();
 ```
 
 or pass in some config values:

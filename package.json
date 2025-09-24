@@ -1,6 +1,6 @@
 {
     "name": "subfork",
-    "version": "0.1.2",
+    "version": "0.2.0",
     "description": "Subfork Javascript libraries",
     "main": "dist/subfork.js",
     "scripts": {

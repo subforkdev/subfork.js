@@ -1,10 +1,8 @@
 /*
 Copyright (c) 2022-2025 Subfork. All rights reserved.
-
-TODO:
-- use vite/rollup to bundle client side dependencies
-- refactor to immediately-invoked function expression (IIFE)
 */
+
+import { io } from "socket.io-client";
 
 // define some constants
 const version = "0.2.0";
@@ -13,29 +11,10 @@ const hostname = window.location.hostname;
 const port = window.location.port;
 const protocol = window.location.protocol;
 const event_url = "https://events.subfork.dev";
-const socket_script = "https://cdn.jsdelivr.net/npm/socket.io@4.5.4/client-dist/socket.io.min.js";
 const wait_time = 100;
 
-// init some variables
-var message;
-var server;
+// define some variables
 var socket;
-var socket_loaded = false;
-
-// load socket library (required for events)
-function load_socket_library(host, callback) {
-    if (socket_loaded) {
-        callback(host);
-    } else {
-        var script = document.createElement("script");
-        script.src = socket_script;
-        document.head.appendChild(script);
-        script.onload = function () {
-            socket_loaded = true;
-            callback(host);
-        };
-    };
-};
 
 // waits for condition to be true
 function wait_for(condition, callback) {
@@ -330,21 +309,23 @@ class Subfork {
     connect() {
         this.session = this.get_session_data();
         console.debug("session", this.session);
-    
-        load_socket_library(this.config.host, () => {
-            const token = this.session.token;
-            if (!token) {
-                console.error("No token was found in session");
-            };
-            socket = window.io(event_url, {
-                transports: ["websocket"],
-                path: "/socket.io",
-                auth: { token: token },
-                withCredentials: true
-            });
-            socket.on("connect", () => console.debug("WS connected", socket.id));
-            socket.on("connect_error", (err) => console.error("WS connect_error:", err && err.message || err));
+      
+        const token = this.session.token;
+        if (!token) {
+          console.error("No token was found in session");
+        }
+      
+        socket = io(event_url, {
+          transports: ["websocket"],
+          path: "/socket.io",
+          auth: { token },
+          withCredentials: true
         });
+      
+        socket.on("connect", () => console.debug("WS connected", socket.id));
+        socket.on("connect_error", (err) =>
+          console.error("WS connect_error:", (err && err.message) || err)
+        );
     }
     // get session data from the server
     get_session_data() {
@@ -370,11 +351,11 @@ class Subfork {
     }
     // return true if connected to event server
     is_connected() {
-        return (socket_loaded && socket.connected);
+        return !!(socket && socket.connected);
     }
     // on ready wait for socket connection
     ready(callback) {
-        wait_for(() => window.socket, () => callback());
+        wait_for(() => socket && socket.connected, () => callback());
     }
     // task queue accessor
     task(name) {
@@ -403,3 +384,5 @@ class Subfork {
         return this.cache.get("user", username);
     }
 };
+
+export { Subfork };

@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+  <body>
+    <h1>Subfork playground</h1>
+    <script type="module">
+      import { Subfork } from "/src/subfork.js";
+      const client = new Subfork({});
+      client.ready(() => console.log("connected?", client.is_connected()));
+    </script>
+  </body>
+</html>

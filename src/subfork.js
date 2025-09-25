@@ -155,7 +155,7 @@ class SubforkEvent {
     }
     user() {
         if (this.type == "user") {
-            return new SubforkUser(this.event_data.user ?? this.event_data);
+            return new SubforkUser(this.event_data.user);
         }
     }
 };
@@ -231,18 +231,14 @@ class SubforkTaskQueue {
     }
     // listen for task events
     on(event_name, callback) {
-        if (socket.connected) {
-            let sig = "task" + ":" + this.name + ":" + event_name;
-            console.debug("listening for event " + sig);
-            socket.on(sig, (event_data) => {
-                const event = new SubforkEvent(event_name, event_data, this.conn);
-                callback(event);
-            });
-            return true;
-        } else {
-            console.error("Socket is not connected");
-            return false;
-        };
+        if (!socket) { console.error("Socket is not initialized"); return false; }
+        const sig = `task:${this.name}:${event_name}`;
+        console.debug("listening for event", sig);
+        socket.on(sig, (event_data) => {
+            const event = new SubforkEvent(event_name, event_data, this.conn);
+            callback(event);
+        });
+        return true;
     }
 };
 

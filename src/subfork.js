@@ -112,7 +112,7 @@ class Datatype {
             if (callback) {
                 callback(resp);
             };
-        }, async=async)
+        }, async)
         return success;
     }
     update(id, data, callback=null) {
@@ -226,7 +226,7 @@ class SubforkTaskQueue {
             } else {
                 console.error(resp.error);
             };
-        }, async=false);
+        }, false);
         return task;
     }
     // listen for task events
@@ -317,7 +317,7 @@ class Subfork {
             console.error("No token was found in session");
         };
       
-        socket = io(event_url, {
+        socket = io(this.config.eventsUrl, {
             transports: ["websocket"],
             path: "/socket.io",
             auth: { token },
@@ -346,8 +346,7 @@ class Subfork {
     // datatype accessor
     data(name) {
         if (!(this.cache.get("data", name))) {
-            var dt = new Datatype(name);
-            this.cache.add("data", name, dt);
+            this.cache.add("data", name, new Datatype(name, this));
         };
         return this.cache.get("data", name);
     }
@@ -388,4 +387,3 @@ class Subfork {
 };
 
 export default Subfork;
-

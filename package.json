@@ -16,9 +16,11 @@
         "dist"
     ],
     "scripts": {
-        "dev": "vite --open /examples/index.html",
-        "build": "vite build",
-        "preview": "vite preview"
+        "dev": "vite --mode lib",
+        "build:lib": "vite build --mode lib",
+        "build:badge": "vite build --mode badge",
+        "build": "npm run build:lib && npm run build:badge",
+        "preview": "vite preview --mode lib"
     },
     "repository": {
         "type": "git",

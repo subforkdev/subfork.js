@@ -69,3 +69,24 @@ Usage:
 ```html
 <script src="https://cdn.jsdelivr.net/npm/subfork@latest/dist/badge.min.js"></script>
 ```
+
+## Development
+
+Dependencies:
+
+```bash
+$ npm i socket.io-client
+$ npm i -D vite typescript
+```
+
+Building the targets:
+
+```bash
+$ npm run build
+```
+
+Running vite dev server:
+
+```bash
+$ npm run dev
+```

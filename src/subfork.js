@@ -220,7 +220,7 @@ class SubforkTaskQueue {
         };
         let url = this.conn.build_url("task/get");
         var task;
-        post_request(url, data=data, function(resp) {
+        post_request(url, data, (resp) => {
             if (resp.success) {
                 task = new SubforkTask(this, resp.data);
             } else {

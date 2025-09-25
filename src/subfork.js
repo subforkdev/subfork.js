@@ -7,9 +7,6 @@ import { io } from "socket.io-client";
 // define some constants
 const version = "0.2.0";
 const api_version = "api";
-const hostname = window.location.hostname;
-const port = window.location.port;
-const protocol = window.location.protocol;
 const event_url = "https://events.subfork.dev";
 const wait_time = 100;
 
@@ -26,17 +23,12 @@ function wait_for(condition, callback) {
 };
 
 // returns a local api url, e.g.: /api/task/create
-function build_url(endpoint) {
-    return "/" + api_version + "/" + endpoint;
-};
-
-// returns true if is running locally
-function is_local() {
-    return (
-        (protocol === "http:") &&
-        (hostname === "localhost" || hostname === "0.0.0.0" || hostname === "127.0.0.1") &&
-        (port === "8000" || port === "8080")
-    );
+function _build_url(endpoint, apiBase) {
+    const base = (apiBase || window.location.origin).replace(/\/+$/, "");
+    const api = String(api_version).replace(/^\/+|\/+$/g, "");
+    const tail = String(endpoint).replace(/^\/+/, "");
+    let url = `${base}/${api}/${tail}`;
+    return url;
 };
 
 // post request to server
@@ -47,7 +39,6 @@ function post_request(url, data = {}, func = null, async = true) {
     xhr.withCredentials = true;
     xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
     xhr.setRequestHeader("Accept", "application/json");
-    xhr.setRequestHeader("X-Subfork-Request", "1");  // your CSRF-lite marker
 
     if (async) {
       xhr.onreadystatechange = function () {
@@ -74,8 +65,9 @@ function post_request(url, data = {}, func = null, async = true) {
 
 // datatype class
 class Datatype {
-    constructor(name) {
+    constructor(name, conn) {
         this.name = name;
+        this.conn = conn;
     }
     create(data, callback=null) {
         let row_data = {
@@ -84,7 +76,7 @@ class Datatype {
             "version": version,
         };
         let success = false;
-        let url = build_url("data/create");
+        let url = this.conn.build_url("data/create");
         post_request(url, data=row_data, function(resp) {
             if (callback) {
                 callback(resp);
@@ -99,7 +91,7 @@ class Datatype {
             "version": version,
         };
         let success = false;
-        let url = build_url("data/delete");
+        let url = this.conn.build_url("data/delete");
         post_request(url, data=data, function(resp) {
             if (callback) {
                 callback(resp);
@@ -115,7 +107,7 @@ class Datatype {
             "version": version,
         };
         let success = false;
-        let url = build_url("data/get");
+        let url = this.conn.build_url("data/get");
         post_request(url, data=data, function(resp) {
             if (callback) {
                 callback(resp);
@@ -131,7 +123,7 @@ class Datatype {
             "version": version,
         };
         let success = false;
-        let url = build_url("data/update");
+        let url = this.conn.build_url("data/update");
         post_request(url, data=row_data, function(resp) {
             if (callback) {
                 callback(resp);
@@ -152,7 +144,7 @@ class SubforkEvent {
     }
     data() {
         if (this.type == "data") {
-            return new Datatype(this.name);
+            return new Datatype(this.name, this.conn);
         }
     }
     task() {
@@ -211,7 +203,7 @@ class SubforkTaskQueue {
             "version": version,
         };
         let success = false;
-        let url = build_url("task/create");
+        let url = this.conn.build_url("task/create");
         post_request(url, data=data, function(resp) {
             if (resp.success) {
                 success = true;
@@ -226,7 +218,7 @@ class SubforkTaskQueue {
             "taskid": taskid,
             "version": version,
         };
-        let url = build_url("task/get");
+        let url = this.conn.build_url("task/get");
         var task;
         post_request(url, data=data, function(resp) {
             if (resp.success) {
@@ -239,13 +231,18 @@ class SubforkTaskQueue {
     }
     // listen for task events
     on(event_name, callback) {
-        let sig = "task" + ":" + this.name + ":" + event_name;
-        console.debug("listening for event " + sig);
-        socket.on(sig, (event_data) => {
-            const event = new SubforkEvent(event_name, event_data, this.conn);
-            callback(event);
-        });
-        return true;
+        if (socket.connected) {
+            let sig = "task" + ":" + this.name + ":" + event_name;
+            console.debug("listening for event " + sig);
+            socket.on(sig, (event_data) => {
+                const event = new SubforkEvent(event_name, event_data, this.conn);
+                callback(event);
+            });
+            return true;
+        } else {
+            console.error("Socket is not connected");
+            return false;
+        };
     }
 };
 
@@ -302,36 +299,41 @@ class Subfork {
     // checks config values for default overrides
     set_config(config) {
         this.config = config;
-        this.config.host = this.config["host"] ?? window.location.hostname;
-        this.config.port = this.config["port"] ?? window.location.port;
+        this.config.host = this.config.host ?? window.location.hostname;
+        this.config.port = this.config.port ?? window.location.port;
+        this.config.apiBase = this.config.apiBase ?? window.location.origin;
+        this.config.eventsUrl = this.config.eventsUrl ?? event_url;
+    }
+    // build a full api url
+    build_url(endpoint) {
+        return _build_url(endpoint, this.config.apiBase);
     }
     // connect to event server
     connect() {
         this.session = this.get_session_data();
         console.debug("session", this.session);
-      
         const token = this.session.token;
         if (!token) {
-          console.error("No token was found in session");
-        }
+            console.error("No token was found in session");
+        };
       
         socket = io(event_url, {
-          transports: ["websocket"],
-          path: "/socket.io",
-          auth: { token },
-          withCredentials: true
+            transports: ["websocket"],
+            path: "/socket.io",
+            auth: { token },
+            withCredentials: true
         });
       
         socket.on("connect", () => console.debug("WS connected", socket.id));
         socket.on("connect_error", (err) =>
-          console.error("WS connect_error:", (err && err.message) || err)
+            console.error("WS connect_error:", (err && err.message) || err)
         );
     }
     // get session data from the server
     get_session_data() {
         let data = {"source": this.config.host, "version": api_version};
         let session_data = {};
-        let url = build_url("session");
+        let url = this.build_url("session");
         post_request(url, data, function(resp) {
             if (resp.success && resp.data) {
                 session_data = resp.data;
@@ -372,7 +374,7 @@ class Subfork {
                 "username": username,
                 "version": version,
             };
-            let url = build_url("user/get");
+            let url = this.build_url("user/get");
             var user;
             post_request(url, data=data, function(resp) {
                 if (resp.success) {

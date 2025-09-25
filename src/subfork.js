@@ -387,4 +387,5 @@ class Subfork {
     }
 };
 
-export { Subfork };
+export default Subfork;
+

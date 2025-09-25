@@ -7,7 +7,7 @@ import { io } from "socket.io-client";
 // define some constants
 const version = "0.2.0";
 const api_version = "api";
-const event_url = "https://events.subfork.dev";
+const event_url = "https://events.subfork.com";
 const wait_time = 100;
 
 // define some variables
@@ -77,6 +77,7 @@ class Datatype {
         this.name = name;
         this.conn = conn;
     }
+    // create a new data row
     create(data, callback=null) {
         let row_data = {
             "collection": this.name,
@@ -92,6 +93,7 @@ class Datatype {
         })
         return success;
     }
+    // delete data rows matching params
     delete(params, callback=null) {
         let data = {
             "collection": this.name,
@@ -107,6 +109,7 @@ class Datatype {
         })
         return success;
     }
+    // find data rows matching params
     find(params, callback=null, expand=false, async=true) {
         let data = {
             "collection": this.name,
@@ -123,6 +126,7 @@ class Datatype {
         }, async)
         return success;
     }
+    // update a data row by id
     update(id, data, callback=null) {
         let row_data = {
             "collection": this.name,
@@ -263,42 +267,52 @@ class SubforkUser {
     constructor(data) {
         this.data = data;
     }
+    get(key) {
+        return this.data[key];
+    }
 };
 
-// in-memory only data cache class
+/*
+simple cache for datatypes, users, and task queues
+*/
 class SubforkCache {
     constructor(parent) {
         this.parent = parent;
         this._cache = {};
     }
+    // type is one of: data, user, task
     add(type, name, value) {
         if (!(type in this._cache)) {
             this._cache[type] = {};
         };
         this._cache[type][name] = value;
     }
+    // clear all cached items
     clear() {
         Object.keys(this._cache).forEach(key => {
             delete this._cache[key];
         });
     }
+    // remove a cached item
     del(type, name) {
         if (type in this._cache && name in this._cache[type]) {
             delete this._cache[type][name];
         }
     }
+    // get a cached item
     get(type, name) {
         if (type in this._cache && name in this._cache[type]) {
             return this._cache[type][name];
         };
     }
+    // update a cached item
     update(type, other) {
         if (!(type in this._cache)) {
             this._cache[type] = {};
         };
         Object.assign(this._cache[type], other);
     }
-}
+};
 
 /*
 main Subfork class
@@ -322,7 +336,7 @@ class Subfork {
     build_url(endpoint) {
         return _build_url(endpoint, this.config.apiBase);
     }
-    // connect to event server
+    // connect to event server with session token
     connect() {
         this.session = this.get_session_data();
         console.debug("session", this.session);
@@ -343,7 +357,7 @@ class Subfork {
             console.error("WS connect_error:", (err && err.message) || err)
         );
     }
-    // get session data from the server
+    // get session data from the server (synchronous)
     get_session_data() {
         let data = {"source": this.config.host, "version": api_version};
         let session_data = {};
@@ -357,7 +371,7 @@ class Subfork {
         }, false);
         return session_data;
     };
-    // datatype accessor
+    // datatype accessor - get or create a datatype
     data(name) {
         if (!(this.cache.get("data", name))) {
             this.cache.add("data", name, new Datatype(name, this));
@@ -372,7 +386,7 @@ class Subfork {
     ready(callback) {
         wait_for(() => socket && socket.connected, () => callback());
     }
-    // task queue accessor
+    // task queue accessor - get or create a task queue
     task(name) {
         if (!(this.cache.get("task", name))) {
             var q = new SubforkTaskQueue(this, name);
@@ -380,7 +394,7 @@ class Subfork {
         };
         return this.cache.get("task", name);
     }
-    // user accessor
+    // user accessor - get user data by username (synchronous)
     user(username) {
         if (!(this.cache.get("user", username))) {
             let data = {

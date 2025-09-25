@@ -155,7 +155,7 @@ class SubforkEvent {
     }
     user() {
         if (this.type == "user") {
-            return new SubforkUser(queue, this.event_data.task);
+            return new SubforkUser(this.event_data.user ?? this.event_data);
         }
     }
 };

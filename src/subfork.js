@@ -11,6 +11,7 @@ const event_url = "https://events.subfork.dev";
 const wait_time = 100;
 
 // define some variables
+// TODO: support multiple connections
 var socket;
 
 // waits for condition to be true
@@ -32,6 +33,7 @@ function _build_url(endpoint, apiBase) {
 };
 
 // post request to server
+// TODO: swtich to fetch api
 function post_request(url, data = {}, func = null, async = true) {
   try {
     var xhr = new XMLHttpRequest();
@@ -48,6 +50,10 @@ function post_request(url, data = {}, func = null, async = true) {
           catch (e) { resp = { success: false, error: "bad json" }; }
           if (func) func(resp);
         }
+      };
+      xhr.onerror = function () {
+        console.error("post_request error:", xhr.statusText);
+        if (func) func({ success: false, error: xhr.statusText });
       };
       xhr.send(JSON.stringify(data));
     } else {

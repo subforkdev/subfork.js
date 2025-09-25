@@ -23,7 +23,7 @@ function wait_for(condition, callback) {
     };
 };
 
-// returns a local api url, e.g.: /api/task/create
+// returns a full api url
 function _build_url(endpoint, apiBase) {
     const base = (apiBase || window.location.origin).replace(/\/+$/, "");
     const api = String(api_version).replace(/^\/+|\/+$/g, "");

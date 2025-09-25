@@ -69,7 +69,9 @@ function post_request(url, data = {}, func = null, async = true) {
   }
 };
 
-// datatype class
+/*
+datatype class - represents a data collection
+*/
 class Datatype {
     constructor(name, conn) {
         this.name = name;
@@ -139,7 +141,9 @@ class Datatype {
     }
 };
 
-// event class
+/*
+event class - used in event callbacks
+*/
 class SubforkEvent {
     constructor(event_name, event_data, conn) {
         this.name = event_name;
@@ -166,7 +170,9 @@ class SubforkEvent {
     }
 };
 
-// task class
+/*
+task class - represents a task in a task queue
+*/
 class SubforkTask {
     constructor(queue, data) {
         this.queue = queue;
@@ -188,7 +194,9 @@ class SubforkTask {
     }
 };
 
-// task queue class
+/*
+task queue class - represents a task queue
+*/
 class SubforkTaskQueue {
     constructor(conn, name) {
         this.conn = conn;
@@ -248,7 +256,9 @@ class SubforkTaskQueue {
     }
 };
 
-// user class
+/*
+user class - represents a user
+*/
 class SubforkUser {
     constructor(data) {
         this.data = data;
@@ -290,7 +300,9 @@ class SubforkCache {
     }
 }
 
-// subfork client class
+/*
+main Subfork class
+*/
 class Subfork {
     constructor(config={}) {
         this.cache = new SubforkCache(this);

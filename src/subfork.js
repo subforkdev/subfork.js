@@ -33,7 +33,7 @@ function _build_url(endpoint, apiBase) {
 };
 
 // post request to server
-// TODO: swtich to fetch api
+// TODO: switch to fetch api
 function post_request(url, data = {}, func = null, async = true) {
   try {
     var xhr = new XMLHttpRequest();

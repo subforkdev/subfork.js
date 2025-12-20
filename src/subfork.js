@@ -344,14 +344,14 @@ class Subfork {
         if (!token) {
             console.error("No token was found in session");
         };
-      
+
         socket = io(this.config.eventsUrl, {
             transports: ["websocket"],
             path: "/socket.io",
             auth: { token },
             withCredentials: true
         });
-      
+
         socket.on("connect", () => console.debug("WS connected", socket.id));
         socket.on("connect_error", (err) =>
             console.error("WS connect_error:", (err && err.message) || err)

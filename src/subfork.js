@@ -32,41 +32,47 @@ function _build_url(endpoint, apiBase) {
     return url;
 };
 
+// post response handler
+function handle_response(xhr, func) {
+    var resp;
+    try {
+        resp = JSON.parse(xhr.responseText || "{}");
+    } catch (e) {
+        console.error("error:", e);
+        resp = { success: false, error: "bad json" };
+    }
+    if (func) func(resp);
+};
+
 // post request to server
 // TODO: switch to fetch api
 function post_request(url, data = {}, func = null, async = true) {
-  try {
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", url, async);
-    xhr.withCredentials = true;
-    xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
-    xhr.setRequestHeader("Accept", "application/json");
+    try {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", url, async);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
+        xhr.setRequestHeader("Accept", "application/json");
 
-    if (async) {
-      xhr.onreadystatechange = function () {
-        if (xhr.readyState === 4) {
-          var resp;
-          try { resp = JSON.parse(xhr.responseText || "{}"); }
-          catch (e) { resp = { success: false, error: "bad json" }; }
-          if (func) func(resp);
+        if (async) {
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4) {
+                    handle_response(xhr, func);
+                }
+            };
+            xhr.onerror = function () {
+                console.error("post_request error:", xhr.statusText);
+                if (func) func({ success: false, error: xhr.statusText });
+            };
+            xhr.send(JSON.stringify(data));
+        } else {
+            xhr.send(JSON.stringify(data));  // blocks until done
+            handle_response(xhr, func);
         }
-      };
-      xhr.onerror = function () {
-        console.error("post_request error:", xhr.statusText);
-        if (func) func({ success: false, error: xhr.statusText });
-      };
-      xhr.send(JSON.stringify(data));
-    } else {
-      xhr.send(JSON.stringify(data));  // blocks until done
-      var resp;
-      try { resp = JSON.parse(xhr.responseText || "{}"); }
-      catch (e) { resp = { success: false, error: "bad json" }; }
-      if (func) func(resp);
+    } catch (e) {
+        console.error("post_request error:", e);
+        if (func) func({ success: false, error: String(e) });
     }
-  } catch (e) {
-    console.error("post_request error:", e);
-    if (func) func({ success: false, error: String(e) });
-  }
 };
 
 /*

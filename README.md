@@ -72,6 +72,8 @@ Usage:
 
 ## Development
 
+For testing updates to `subfork.js`, use the vite dev server:
+
 Dependencies:
 
 ```bash

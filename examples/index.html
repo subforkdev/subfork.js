@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Subfork.js Playground</title>
+    <script src="/dist/badge.min.js"></script>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: #0f1115; color: #e6e6e6; margin: 0; padding: 24px;
+      }
+      h1 { margin: 0 0 8px; font-size: 20px; }
+      .sub { opacity: 0.7; margin-bottom: 16px; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 16px; }
+      input[type="text"] {
+        background: #1b1f2a; color: #e6e6e6; border: 1px solid #333a47;
+        padding: 8px 10px; border-radius: 8px; min-width: 260px;
+      }
+      button {
+        background: #232a36; color: #e6e6e6; border: 1px solid #3a4354;
+        padding: 8px 12px; border-radius: 8px; cursor: pointer;
+      }
+      button:hover { background: #2a3342; }
+      #log {
+        white-space: pre-wrap; background: #12151c; border: 1px solid #2a3342;
+        padding: 12px; border-radius: 10px; margin-top: 12px; height: 360px; overflow-y: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+      }
+      .sep { height: 1px; background: #202636; margin: 16px 0; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <h1>Subfork.js Playground</h1>
+    <div class="sub">Quick logger to exercise the Subfork client (WS + REST).</div>
+
+    <div class="row">
+      <label>API Base:</label>
+      <input id="apiBase" type="text" placeholder="https://app.example.com" />
+      <small class="sub">Empty = <code>window.location.origin</code></small>
+    </div>
+
+    <div class="row">
+      <label>Queue:</label>
+      <input id="queueName" type="text" value="test" />
+      <button onclick="initClient()">Init client</button>
+      <button onclick="checkConn()">Check connection</button>
+      <button onclick="subscribeQueue()">Subscribe to “created”</button>
+      <button onclick="enqueueTask()">Enqueue demo task</button>
+      <button onclick="fetchSession()">GET session (REST)</button>
+      <button onclick="clearLog()">Clear log</button>
+    </div>
+
+    <div class="sep"></div>
+    <div id="log"></div>
+
+    <!-- IIFE build (global `Subfork`) -->
+    <script src="/dist/subfork.min.js"></script>
+
+    <!-- ESM build -->
+    <!-- <script type="module">
+      import { Subfork } from "/src/subfork.js";
+      window.Subfork = Subfork;
+    </script> -->
+
+    <script>
+      const logEl = document.getElementById("log");
+      const apiInput = document.getElementById("apiBase");
+      const queueInput = document.getElementById("queueName");
+
+      let client = null;
+
+      function log(...args) {
+        const ts = new Date().toISOString();
+        const line = `[${ts}] ${args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")}\n`;
+        logEl.textContent += line;
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log(...args);
+      }
+      function clearLog() { logEl.textContent = ""; }
+
+      function initClient() {
+        const apiBase = (apiInput.value || window.location.origin);
+        log("Initialized Subfork client with apiBase =", apiBase);
+        client = new Subfork({ apiBase });
+
+        // ready() waits for socket connection
+        client.ready(() => {
+          log("ready(): socket connected =", client.is_connected());
+        });
+      }
+
+      function checkConn() {
+        if (!client) return log("Init the client first.");
+        log("is_connected():", client.is_connected());
+      }
+
+      function subscribeQueue() {
+        if (!client) return log("Init the client first.");
+        const q = queueInput.value || "test";
+        const ok = client.task(q).on("created", (ev) => {
+          log(`task:${q}:created →`, ev.event_data);
+        });
+        log(`Subscribed to task:${q}:created →`, ok ? "ok" : "failed");
+      }
+
+      function enqueueTask() {
+        if (!client) return log("Init the client first.");
+        const q = queueInput.value || "demo";
+        const payload = { hello: "world", ts: new Date().toISOString() };
+        // Note: enqueue/create is async under the hood; return value is not reliable in current API.
+        client.task(q).create(payload);
+        log(`Requested task enqueue on queue="${q}" with`, payload,
+            "— watch for server-emitted events.");
+      }
+
+      function fetchSession() {
+        const apiBase = (apiInput.value || window.location.origin).replace(/\/+$/, "");
+        const url = `${apiBase}/api/session`;
+        fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include", // same-origin cookie flow
+          body: JSON.stringify({ source: location.hostname, version: "api" })
+        })
+          .then(r => r.json())
+          .then(data => log("POST /api/session →", data))
+          .catch(err => log("session error:", err.message));
+      }
+    </script>
+  </body>
+</html>

@@ -1,13 +1,26 @@
 {
     "name": "subfork",
-    "version": "0.1.2",
-    "description": "Subfork Javascript libraries",
-    "main": "dist/subfork.js",
+    "version": "0.2.0",
+    "description": "Subfork JS client",
+    "type": "module",
+    "module": "dist/subfork.mjs",
+    "exports": {
+        ".": {
+            "import": "./dist/subfork.mjs"
+        },
+        "./badge": "./dist/badge.min.js"
+    },
+    "jsdelivr": "dist/subfork.min.js",
+    "unpkg": "dist/subfork.min.js",
+    "files": [
+        "dist"
+    ],
     "scripts": {
-        "build": "npm run clean && npm run copy && npm run minify",
-        "clean": "shx rm -rf dist",
-        "copy": "shx mkdir -p dist && shx cp src/*.js dist/",
-        "minify": "for file in src/*.js; do terser \"$file\" -o \"dist/$(basename \"$file\" .js).min.js\" --compress --mangle; done"
+        "dev": "vite --mode lib",
+        "build:lib": "vite build --mode lib",
+        "build:badge": "vite build --mode badge",
+        "build": "npm run build:lib && npm run build:badge",
+        "preview": "vite preview --mode lib"
     },
     "repository": {
         "type": "git",
@@ -20,10 +33,10 @@
     },
     "homepage": "https://subfork.com",
     "devDependencies": {
-        "shx": "^0.3.4",
-        "terser": "^5.31.3"
+        "typescript": "^5.9.2",
+        "vite": "^5.4.20"
     },
-    "files": [
-        "dist/"
-    ]
+    "dependencies": {
+        "socket.io-client": "^4.8.1"
+    }
 }

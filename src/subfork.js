@@ -1,93 +1,18 @@
 /*
-Copyright (c) Subfork. All rights reserved.
-
-TODO:
-- use webpack to bundle client side dependencies
-- replace post-request with non-jquery function
-- refactor to immediately-invoked function expression (IIFE)
-
-    const Subfork = (() => {
-        ...
-        return {
-            subfork: Subfork
-        }
-    })();
-
-Instantiate client:
-
-    const subfork = Subfork();
-
-or pass in some config values:
-
-    const subfork = Subfork({
-        host: "test.fork.io",
-        on: {
-            "message": function(msg) {
-                console.log(msg);
-            },
-        }
-    });
-
-Connect "test" task "done" event callback:
-
-    subfork.task("test").on("done", function(e) {
-        console.log(e.message + ": " + e.task.results);
-    });
-
-Create a "test" task with some data:
-
-    subfork.task("test").create({t:2});
-
-Set on "done" callback when creating task:
-
-    subfork.task("test").create({
-        "t": 3
-    }).on("done", function(event) {
-        console.log(event);
-    });
+Copyright (c) 2022-2025 Subfork. All rights reserved.
 */
 
+import { io } from "socket.io-client";
+
 // define some constants
-const version = "0.1.2";
+const version = "0.2.0";
 const api_version = "api";
-const hostname = window.location.hostname;
-const port = window.location.port;
-const protocol = window.location.protocol;
-const socket_script = "https://cdn.jsdelivr.net/npm/socket.io@4.5.4/client-dist/socket.io.min.js";
+const event_url = "https://events.subfork.com";
 const wait_time = 100;
 
-// init some variables
-var message;
-var server;
+// define some variables
+// TODO: support multiple connections
 var socket;
-var socket_loaded = false;
-
-// async returns a sha256 string (only works with https)
-async function sha256(message) {
-    const msgBuffer = new TextEncoder("utf-8").encode(message);
-    // hash the message
-    const hashBuffer = await window.crypto.subtle.digest("SHA-256", msgBuffer);
-    // convert ArrayBuffer to Array
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    // convert bytes to hex string
-    const hashHex = hashArray.map(b => ("00" + b.toString(16)).slice(-2)).join("");
-    return hashHex;
-};
-
-// load socket library (required for events)
-function load_socket_library(host, callback) {
-    if (socket_loaded) {
-        callback(host);
-    } else {
-        var script = document.createElement("script");
-        script.src = socket_script;
-        document.head.appendChild(script);
-        script.onload = function () {
-            socket_loaded = true;
-            callback(host);
-        };
-    };
-};
 
 // waits for condition to be true
 function wait_for(condition, callback) {
@@ -98,102 +23,94 @@ function wait_for(condition, callback) {
     };
 };
 
-// returns a local api url, e.g.: /api/task/create
-function build_url(endpoint) {
-    return "/" + api_version + "/" + endpoint;
+// returns a full api url
+function _build_url(endpoint, apiBase) {
+    const base = (apiBase || window.location.origin).replace(/\/+$/, "");
+    const api = String(api_version).replace(/^\/+|\/+$/g, "");
+    const tail = String(endpoint).replace(/^\/+/, "");
+    let url = `${base}/${api}/${tail}`;
+    return url;
 };
 
-// returns true if is running locally
-function is_local() {
-    return (
-        (protocol === "http:") &&
-        (hostname === "localhost" || hostname === "0.0.0.0" || hostname === "127.0.0.1") &&
-        (port === "8000" || port === "8080")
-    );
-};
-
-// post request to server
-// function _request(url, data={}) {
-//     fetch(url, {
-//         method: "POST",
-//         headers: {
-//             "Accept": "application/json",
-//             "Content-Type': 'application/json"
-//         },
-//         body: JSON.stringify(data)
-//     })
-//     .then(response => response.json())
-//     .then(response => console.log(JSON.stringify(response)))
-// };
-function post_request(url, data={}, func=null, async=true) {
-    $.ajax({
-        type: "POST",
-        contentType: "application/json; charset=utf-8",
-        url: url,
-        async: async,
-        data: JSON.stringify(data),
-        success: function (resp) {
-            if (func) {
-                func(resp);
-            } else {
-                console.debug("no callback");
-            };
+/*
+post request to server:
+if a callback is provided, it will be invoked with the parsed JSON response.
+always returns a Promise that resolves to the response object.
+*/
+function post_request(url, data = {}, callback = null) {
+    return fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
         },
-        dataType: "json"
+        body: JSON.stringify(data ?? {}),
+    })
+    .then(async (resp) => {
+        let json;
+        try {
+            json = await resp.json();
+        } catch (e) {
+            json = { success: false, error: "bad json", status: resp.status };
+        }
+
+        // If server returned non-2xx, keep it visible to callers.
+        if (!resp.ok && (json && typeof json.success === "undefined")) {
+            json.success = false;
+            json.status = resp.status;
+        }
+
+        if (callback) callback(json);
+        return json;
+    })
+    .catch((e) => {
+        const err = { success: false, error: String(e) };
+        if (callback) callback(err);
+        return err;
     });
 };
 
-// datatype class
+/*
+datatype class - represents a data collection
+*/
 class Datatype {
-    constructor(name) {
+    constructor(name, conn) {
         this.name = name;
+        this.conn = conn;
     }
+    // create a new data row
     create(data, callback=null) {
         let row_data = {
             "collection": this.name,
             "data": data,
             "version": version,
         };
-        let success = false;
-        let url = build_url("data/create");
-        post_request(url, data=row_data, function(resp) {
-            if (callback) {
-                callback(resp);
-            };
-        })
-        return success;
+        let url = this.conn.build_url("data/create");
+        return post_request(url, row_data, callback);
     }
+    // delete data rows matching params
     delete(params, callback=null) {
         let data = {
             "collection": this.name,
             "params": params,
             "version": version,
         };
-        let success = false;
-        let url = build_url("data/delete");
-        post_request(url, data=data, function(resp) {
-            if (callback) {
-                callback(resp);
-            };
-        })
-        return success;
+        let url = this.conn.build_url("data/delete");
+        return post_request(url, data, callback);
     }
-    find(params, callback=null, expand=false, async=true) {
+    // find data rows matching params
+    find(params, callback=null, expand=false) {
         let data = {
             "collection": this.name,
             "expand": expand,
             "params": params,
             "version": version,
         };
-        let success = false;
-        let url = build_url("data/get");
-        post_request(url, data=data, function(resp) {
-            if (callback) {
-                callback(resp);
-            };
-        }, async=async)
-        return success;
+        let url = this.conn.build_url("data/get");
+        return post_request(url, data, callback);
     }
+    // update a data row by id
     update(id, data, callback=null) {
         let row_data = {
             "collection": this.name,
@@ -201,44 +118,43 @@ class Datatype {
             "data": data,
             "version": version,
         };
-        let success = false;
-        let url = build_url("data/update");
-        post_request(url, data=row_data, function(resp) {
-            if (callback) {
-                callback(resp);
-            };
-        })
-        return success;
+        let url = this.conn.build_url("data/update");
+        return post_request(url, row_data, callback);
     }
 };
 
-// event class
+/*
+event class - used in event callbacks
+*/
 class SubforkEvent {
-    constructor(event_name, event_data) {
+    constructor(event_name, event_data, conn) {
         this.name = event_name;
         this.type = event_data.type;
         this.message = event_data.message;
         this.event_data = event_data;
+        this.conn = conn;
     }
     data() {
         if (this.type == "data") {
-            return new Datatype(this.name);
+            return new Datatype(this.name, this.conn);
         }
     }
     task() {
         if (this.type == "task") {
-            let queue = new SubforkTaskQueue(this.event_data.queue);
+            let queue = new SubforkTaskQueue(this.conn, this.event_data.queue);
             return new SubforkTask(queue, this.event_data.task);
         }
     }
     user() {
         if (this.type == "user") {
-            return new SubforkUser(queue, this.event_data.task);
+            return new SubforkUser(this.event_data.user);
         }
     }
 };
 
-// task class
+/*
+task class - represents a task in a task queue
+*/
 class SubforkTask {
     constructor(queue, data) {
         this.queue = queue;
@@ -260,7 +176,9 @@ class SubforkTask {
     }
 };
 
-// task queue class
+/*
+task queue class - represents a task queue
+*/
 class SubforkTaskQueue {
     constructor(conn, name) {
         this.conn = conn;
@@ -274,94 +192,105 @@ class SubforkTaskQueue {
         }
     }
     // enqueue a task
-    enqueue(task) {
+    enqueue(task, callback=null) {
         let data = {
             "queue": this.name,
             "data": task.data,
             "version": version,
         };
-        let success = false;
-        let url = build_url("task/create");
-        post_request(url, data=data, function(resp) {
-            if (resp.success) {
-                success = true;
-            };
-        })
-        return success;
+        let url = this.conn.build_url("task/create");
+        return post_request(url, data, callback);
     }
     // find and return a task by id
-    get(taskid) {
+    get(taskid, callback=null) {
         let data = {
             "queue": this.name,
             "taskid": taskid,
             "version": version,
         };
-        let url = build_url("task/get");
-        var task;
-        post_request(url, data=data, function(resp) {
-            if (resp.success) {
-                task = new SubforkTask(this, resp.data);
-            } else {
-                console.error(resp.error);
-            };
-        }, async=false);
-        return task;
+        let url = this.conn.build_url("task/get");
+        return post_request(url, data, (resp) => {
+            if (!resp || !resp.success) {
+                if (callback) callback(null, resp);
+                return;
+            }
+            const task = new SubforkTask(this, resp.data);
+            if (callback) callback(task, resp);
+        }).then((resp) => {
+            if (resp && resp.success) return new SubforkTask(this, resp.data);
+            return null;
+        });
     }
     // listen for task events
-    // TODO: hash the event signature
     on(event_name, callback) {
-        let sig = this.conn.session.sessionid + ":task:" + this.name + ":" + event_name;
-        socket.on(sig, function(event_data, cb) {
-            let event = new SubforkEvent(event_name, event_data);
+        if (!socket) { console.error("Socket is not initialized"); return false; }
+        const sig = `task:${this.name}:${event_name}`;
+        console.debug("listening for event", sig);
+        socket.on(sig, (event_data) => {
+            const event = new SubforkEvent(event_name, event_data, this.conn);
             callback(event);
         });
         return true;
     }
 };
 
-// user class
+/*
+user class - represents a user
+*/
 class SubforkUser {
     constructor(data) {
         this.data = data;
     }
+    get(key) {
+        return this.data[key];
+    }
 };
 
-// in-memory only data cache class
+/*
+simple cache for datatypes, users, and task queues
+*/
 class SubforkCache {
     constructor(parent) {
         this.parent = parent;
         this._cache = {};
     }
+    // type is one of: data, user, task
     add(type, name, value) {
         if (!(type in this._cache)) {
             this._cache[type] = {};
         };
         this._cache[type][name] = value;
     }
+    // clear all cached items
     clear() {
         Object.keys(this._cache).forEach(key => {
             delete this._cache[key];
         });
     }
+    // remove a cached item
     del(type, name) {
         if (type in this._cache && name in this._cache[type]) {
             delete this._cache[type][name];
         }
     }
+    // get a cached item
     get(type, name) {
         if (type in this._cache && name in this._cache[type]) {
             return this._cache[type][name];
         };
     }
+    // update a cached item
     update(type, other) {
         if (!(type in this._cache)) {
             this._cache[type] = {};
         };
         Object.assign(this._cache[type], other);
     }
-}
+};
 
-// subfork client class
+/*
+main Subfork client class
+*/
 class Subfork {
     constructor(config={}) {
         this.cache = new SubforkCache(this);
@@ -372,49 +301,68 @@ class Subfork {
     // checks config values for default overrides
     set_config(config) {
         this.config = config;
-        this.config.host = this.config["host"] ?? window.location.hostname;
-        this.config.port = this.config["port"] ?? window.location.port;
+        this.config.host = this.config.host ?? window.location.hostname;
+        this.config.port = this.config.port ?? window.location.port;
+        this.config.apiBase = this.config.apiBase ?? window.location.origin;
+        this.config.eventsUrl = this.config.eventsUrl ?? event_url;
     }
-    // connect to event server
-    connect() {
-        this.session = this.get_session_data();
-        console.debug("sessionid", this.session.sessionid);
-        load_socket_library(this.config.host, function(host) {
-            socket = io("https://events.fork.io");
-            console.debug("connected to event server");
+    // build a full api url
+    build_url(endpoint) {
+        return _build_url(endpoint, this.config.apiBase);
+    }
+    // connect to event server with session token
+    async connect() {
+        this.session = await this.get_session_data();
+        console.debug("session", this.session);
+
+        const token = this.session && this.session.token;
+        if (!token) {
+            console.warn("No token was found in session; skipping WS connect");
+            return false;
+        }
+
+        socket = io(this.config.eventsUrl, {
+            transports: ["websocket"],
+            path: "/socket.io",
+            auth: { token },
+            withCredentials: true
         });
+
+        socket.on("connect", () => console.debug("WS connected", socket.id));
+        socket.on("connect_error", (err) =>
+            console.error("WS connect_error:", (err && err.message) || err)
+        );
+        return true;
     }
-    // get session data from the server
-    get_session_data() {
+    // get session data from the server (synchronous)
+    async get_session_data(callback=null) {
         let data = {"source": this.config.host, "version": api_version};
-        let session_data = {};
-        let url = build_url("get_session_data");
-        post_request(url, data, function(resp) {
-            if (resp.success && resp.data) {
-                session_data = resp.data;
+        let url = this.build_url("session");
+        return post_request(url, data, (resp) => {
+            if (resp && resp.success && resp.data) {
+                if (callback) callback(resp.data, resp);
             } else {
-                console.error(resp.error);
-            };
-        }, false);
-        return session_data;
+                console.error(resp && resp.error);
+                if (callback) callback(null, resp);
+            }
+        }).then((resp) => (resp && resp.success && resp.data) ? resp.data : {});
     };
-    // datatype accessor
+    // datatype accessor - get or create a datatype
     data(name) {
         if (!(this.cache.get("data", name))) {
-            var dt = new Datatype(name);
-            this.cache.add("data", name, dt);
+            this.cache.add("data", name, new Datatype(name, this));
         };
         return this.cache.get("data", name);
     }
     // return true if connected to event server
     is_connected() {
-        return (socket_loaded && socket.connected);
+        return !!(socket && socket.connected);
     }
     // on ready wait for socket connection
     ready(callback) {
-        wait_for(() => window.socket, () => callback());
+        wait_for(() => socket && socket.connected, () => callback());
     }
-    // task queue accessor
+    // task queue accessor - get or create a task queue
     task(name) {
         if (!(this.cache.get("task", name))) {
             var q = new SubforkTaskQueue(this, name);
@@ -422,22 +370,38 @@ class Subfork {
         };
         return this.cache.get("task", name);
     }
-    // user accessor
-    user(username) {
-        if (!(this.cache.get("user", username))) {
-            let data = {
-                "username": username,
-                "version": version,
-            };
-            let url = build_url("user/get");
-            var user;
-            post_request(url, data=data, function(resp) {
-                if (resp.success) {
-                    user = new SubforkUser(resp.data);
-                };
-            }, false);
-            this.cache.add("user", username, user);
+    // user accessor - get user data by username (synchronous)
+    user(username, callback=null) {
+        // If cached, return it (and callback immediately if provided).
+        const cached = this.cache.get("user", username);
+        if (cached) {
+            if (callback) callback(cached, { success: true, data: cached.data });
+            return Promise.resolve(cached);
+        }
+
+        let data = {
+            "username": username,
+            "version": version,
         };
-        return this.cache.get("user", username);
+        let url = this.build_url("user/get");
+
+        return post_request(url, data, (resp) => {
+            if (resp && resp.success) {
+                const user = new SubforkUser(resp.data);
+                this.cache.add("user", username, user);
+                if (callback) callback(user, resp);
+            } else {
+                if (callback) callback(null, resp);
+            }
+        }).then((resp) => {
+            if (resp && resp.success) {
+                const user = new SubforkUser(resp.data);
+                this.cache.add("user", username, user);
+                return user;
+            }
+            return null;
+        });
     }
 };
+
+export default Subfork;

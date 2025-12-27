@@ -1,11 +1,13 @@
 /*
-Copyright (c) Subfork. All rights reserved.
+Copyright (c) 2022-2025 Subfork. All rights reserved.
 */
+
 
 (function() {
     function createAttributionBadge() {
         // Create the badge container
         const badge = document.createElement("div");
+        badge.id = "subfork-badge";
         badge.className = "attribution-badge";
 
         // Create the image element

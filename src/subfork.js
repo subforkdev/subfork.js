@@ -32,47 +32,43 @@ function _build_url(endpoint, apiBase) {
     return url;
 };
 
-// post response handler
-function handle_response(xhr, func) {
-    var resp;
-    try {
-        resp = JSON.parse(xhr.responseText || "{}");
-    } catch (e) {
-        console.error("error:", e);
-        resp = { success: false, error: "bad json" };
-    }
-    if (func) func(resp);
-};
-
-// post request to server
-// TODO: switch to fetch api
-function post_request(url, data = {}, func = null, async = true) {
-    try {
-        var xhr = new XMLHttpRequest();
-        xhr.open("POST", url, async);
-        xhr.withCredentials = true;
-        xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
-        xhr.setRequestHeader("Accept", "application/json");
-
-        if (async) {
-            xhr.onreadystatechange = function () {
-                if (xhr.readyState === 4) {
-                    handle_response(xhr, func);
-                }
-            };
-            xhr.onerror = function () {
-                console.error("post_request error:", xhr.statusText);
-                if (func) func({ success: false, error: xhr.statusText });
-            };
-            xhr.send(JSON.stringify(data));
-        } else {
-            xhr.send(JSON.stringify(data));  // blocks until done
-            handle_response(xhr, func);
+/*
+post request to server:
+if a callback is provided, it will be invoked with the parsed JSON response.
+always returns a Promise that resolves to the response object.
+*/
+function post_request(url, data = {}, callback = null) {
+    return fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
+        },
+        body: JSON.stringify(data ?? {}),
+    })
+    .then(async (resp) => {
+        let json;
+        try {
+            json = await resp.json();
+        } catch (e) {
+            json = { success: false, error: "bad json", status: resp.status };
         }
-    } catch (e) {
-        console.error("post_request error:", e);
-        if (func) func({ success: false, error: String(e) });
-    }
+
+        // If server returned non-2xx, keep it visible to callers.
+        if (!resp.ok && (json && typeof json.success === "undefined")) {
+            json.success = false;
+            json.status = resp.status;
+        }
+
+        if (callback) callback(json);
+        return json;
+    })
+    .catch((e) => {
+        const err = { success: false, error: String(e) };
+        if (callback) callback(err);
+        return err;
+    });
 };
 
 /*
@@ -90,14 +86,8 @@ class Datatype {
             "data": data,
             "version": version,
         };
-        let success = false;
         let url = this.conn.build_url("data/create");
-        post_request(url, data=row_data, function(resp) {
-            if (callback) {
-                callback(resp);
-            };
-        })
-        return success;
+        return post_request(url, row_data, callback);
     }
     // delete data rows matching params
     delete(params, callback=null) {
@@ -106,31 +96,19 @@ class Datatype {
             "params": params,
             "version": version,
         };
-        let success = false;
         let url = this.conn.build_url("data/delete");
-        post_request(url, data=data, function(resp) {
-            if (callback) {
-                callback(resp);
-            };
-        })
-        return success;
+        return post_request(url, data, callback);
     }
     // find data rows matching params
-    find(params, callback=null, expand=false, async=true) {
+    find(params, callback=null, expand=false) {
         let data = {
             "collection": this.name,
             "expand": expand,
             "params": params,
             "version": version,
         };
-        let success = false;
         let url = this.conn.build_url("data/get");
-        post_request(url, data=data, function(resp) {
-            if (callback) {
-                callback(resp);
-            };
-        }, async)
-        return success;
+        return post_request(url, data, callback);
     }
     // update a data row by id
     update(id, data, callback=null) {
@@ -140,14 +118,8 @@ class Datatype {
             "data": data,
             "version": version,
         };
-        let success = false;
         let url = this.conn.build_url("data/update");
-        post_request(url, data=row_data, function(resp) {
-            if (callback) {
-                callback(resp);
-            };
-        })
-        return success;
+        return post_request(url, row_data, callback);
     }
 };
 
@@ -220,38 +192,34 @@ class SubforkTaskQueue {
         }
     }
     // enqueue a task
-    enqueue(task) {
+    enqueue(task, callback=null) {
         let data = {
             "queue": this.name,
             "data": task.data,
             "version": version,
         };
-        let success = false;
         let url = this.conn.build_url("task/create");
-        post_request(url, data=data, function(resp) {
-            if (resp.success) {
-                success = true;
-            };
-        })
-        return success;
+        return post_request(url, data, callback);
     }
     // find and return a task by id
-    get(taskid) {
+    get(taskid, callback=null) {
         let data = {
             "queue": this.name,
             "taskid": taskid,
             "version": version,
         };
         let url = this.conn.build_url("task/get");
-        var task;
-        post_request(url, data, (resp) => {
-            if (resp.success) {
-                task = new SubforkTask(this, resp.data);
-            } else {
-                console.error(resp.error);
-            };
-        }, false);
-        return task;
+        return post_request(url, data, (resp) => {
+            if (!resp || !resp.success) {
+                if (callback) callback(null, resp);
+                return;
+            }
+            const task = new SubforkTask(this, resp.data);
+            if (callback) callback(task, resp);
+        }).then((resp) => {
+            if (resp && resp.success) return new SubforkTask(this, resp.data);
+            return null;
+        });
     }
     // listen for task events
     on(event_name, callback) {
@@ -321,7 +289,7 @@ class SubforkCache {
 };
 
 /*
-main Subfork class
+main Subfork client class
 */
 class Subfork {
     constructor(config={}) {
@@ -343,13 +311,15 @@ class Subfork {
         return _build_url(endpoint, this.config.apiBase);
     }
     // connect to event server with session token
-    connect() {
-        this.session = this.get_session_data();
+    async connect() {
+        this.session = await this.get_session_data();
         console.debug("session", this.session);
-        const token = this.session.token;
+
+        const token = this.session && this.session.token;
         if (!token) {
-            console.error("No token was found in session");
-        };
+            console.warn("No token was found in session; skipping WS connect");
+            return false;
+        }
 
         socket = io(this.config.eventsUrl, {
             transports: ["websocket"],
@@ -362,20 +332,20 @@ class Subfork {
         socket.on("connect_error", (err) =>
             console.error("WS connect_error:", (err && err.message) || err)
         );
+        return true;
     }
     // get session data from the server (synchronous)
-    get_session_data() {
+    async get_session_data(callback=null) {
         let data = {"source": this.config.host, "version": api_version};
-        let session_data = {};
         let url = this.build_url("session");
-        post_request(url, data, function(resp) {
-            if (resp.success && resp.data) {
-                session_data = resp.data;
+        return post_request(url, data, (resp) => {
+            if (resp && resp.success && resp.data) {
+                if (callback) callback(resp.data, resp);
             } else {
-                console.error(resp.error);
-            };
-        }, false);
-        return session_data;
+                console.error(resp && resp.error);
+                if (callback) callback(null, resp);
+            }
+        }).then((resp) => (resp && resp.success && resp.data) ? resp.data : {});
     };
     // datatype accessor - get or create a datatype
     data(name) {
@@ -401,22 +371,36 @@ class Subfork {
         return this.cache.get("task", name);
     }
     // user accessor - get user data by username (synchronous)
-    user(username) {
-        if (!(this.cache.get("user", username))) {
-            let data = {
-                "username": username,
-                "version": version,
-            };
-            let url = this.build_url("user/get");
-            var user;
-            post_request(url, data=data, function(resp) {
-                if (resp.success) {
-                    user = new SubforkUser(resp.data);
-                };
-            }, false);
-            this.cache.add("user", username, user);
+    user(username, callback=null) {
+        // If cached, return it (and callback immediately if provided).
+        const cached = this.cache.get("user", username);
+        if (cached) {
+            if (callback) callback(cached, { success: true, data: cached.data });
+            return Promise.resolve(cached);
+        }
+
+        let data = {
+            "username": username,
+            "version": version,
         };
-        return this.cache.get("user", username);
+        let url = this.build_url("user/get");
+
+        return post_request(url, data, (resp) => {
+            if (resp && resp.success) {
+                const user = new SubforkUser(resp.data);
+                this.cache.add("user", username, user);
+                if (callback) callback(user, resp);
+            } else {
+                if (callback) callback(null, resp);
+            }
+        }).then((resp) => {
+            if (resp && resp.success) {
+                const user = new SubforkUser(resp.data);
+                this.cache.add("user", username, user);
+                return user;
+            }
+            return null;
+        });
     }
 };
 

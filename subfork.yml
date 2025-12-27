@@ -15,8 +15,8 @@ auto_minimize: true
 # page template definitions
 templates:
   subforkjs:
-    route: /subfork.js
-    file: subfork.js
+    route: /subfork.min.js
+    file: dist/subfork.min.js
   badgejs:
-    route: /badge.js
-    file: badge.js
+    route: /badge.min.js
+    file: dist/badge.min.js
